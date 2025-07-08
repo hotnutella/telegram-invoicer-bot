@@ -122,4 +122,34 @@ export class StorageService {
   }
 }
 
+/**
+ * Upload a PDF file to Supabase Storage with organized folder structure
+ */
+export async function uploadPDFToStorage(
+  localPath: string, 
+  fileName: string, 
+  invoiceId: number
+): Promise<string> {
+  try {
+    const fileBuffer = fs.readFileSync(localPath);
+    const storagePath = `invoices/${invoiceId}/${fileName}`;
+    
+    const { data, error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .upload(storagePath, fileBuffer, {
+        contentType: 'application/pdf',
+        upsert: true
+      });
+
+    if (error) {
+      throw new Error(`Upload failed: ${error.message}`);
+    }
+
+    return storagePath;
+  } catch (error) {
+    console.error('PDF upload error:', error);
+    throw error;
+  }
+}
+
 export default StorageService;

@@ -4,20 +4,23 @@ FROM node:18-alpine
 # Set working directory
 WORKDIR /app
 
-# Install dependencies for better-sqlite3 and other native modules
+# Install dependencies for native modules (pg native bindings)
 RUN apk add --no-cache python3 make g++
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install ALL dependencies (including devDependencies for build)
+RUN npm ci
 
 # Copy source code
 COPY . .
 
 # Build the TypeScript code
 RUN npm run build
+
+# Remove devDependencies to reduce final image size
+RUN npm prune --production
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs

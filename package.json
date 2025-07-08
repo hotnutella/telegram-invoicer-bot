@@ -21,7 +21,6 @@
   },
   "dependencies": {
     "node-telegram-bot-api": "^0.66.0",
-    "better-sqlite3": "^11.0.0",
     "pdf-lib": "^1.17.1",
     "dotenv": "^16.4.5",
     "@supabase/supabase-js": "^2.45.4",
@@ -30,7 +29,6 @@
   "devDependencies": {
     "@types/node": "^20.14.10",
     "@types/node-telegram-bot-api": "^0.64.7",
-    "@types/better-sqlite3": "^7.6.10",
     "@types/pg": "^8.10.2",
     "typescript": "^5.5.3",
     "ts-node": "^10.9.2",
