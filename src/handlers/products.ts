@@ -1,5 +1,5 @@
 import TelegramBot from 'node-telegram-bot-api';
-import { ProductModel } from '../database/models';
+import { ProductModel } from '../database/models-new';
 import { getConversationState, setConversationState, clearConversationState } from '../bot';
 import { sanitizeInput, validateRequired, validatePositiveNumber, validateVATRate } from '../utils/validators';
 import { formatProductName, formatCurrency, truncateText } from '../utils/formatters';

@@ -1,5 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { ClientModel } from '../database/models-new';
+import { Client } from '../types';
 import { getConversationState, setConversationState, clearConversationState } from '../bot';
 import { sanitizeInput, validateRequired } from '../utils/validators';
 import { formatClientName, truncateText } from '../utils/formatters';
@@ -16,7 +17,7 @@ export const clientHandlers = (bot: TelegramBot) => {
       return;
     }
     
-    const keyboard = clients.map((client) => [{
+    const keyboard = clients.map((client: Client) => [{
       text: truncateText(formatClientName(client), 30),
       callback_data: `client_view_${client.id}`
     }]);
@@ -54,7 +55,7 @@ export const clientHandlers = (bot: TelegramBot) => {
       return;
     }
     
-    const keyboard = clients.map((client) => [{
+    const keyboard = clients.map((client: Client) => [{
       text: truncateText(formatClientName(client), 30),
       callback_data: `client_edit_${client.id}`
     }]);
@@ -78,7 +79,7 @@ export const clientHandlers = (bot: TelegramBot) => {
       return;
     }
     
-    const keyboard = clients.map((client) => [{
+    const keyboard = clients.map((client: Client) => [{
       text: truncateText(formatClientName(client), 30),
       callback_data: `client_delete_${client.id}`
     }]);
@@ -191,7 +192,7 @@ ${client.address_line2 ? `**Address 2:** ${client.address_line2}\n` : ''}**Count
           return;
         }
         
-        const keyboard = clients.map((client) => [{
+        const keyboard = clients.map((client: Client) => [{
           text: truncateText(formatClientName(client), 30),
           callback_data: `client_view_${client.id}`
         }]);

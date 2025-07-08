@@ -60,6 +60,21 @@ export interface InvoiceLine {
   line_total: number;
 }
 
+export interface Payment {
+  id?: number;
+  user_id: number;
+  invoice_id?: number;
+  telegram_payment_charge_id: string;
+  provider_payment_charge_id: string;
+  amount: number;
+  currency: string;
+  payload: string;
+  status: string;
+  refunded: boolean;
+  refund_date?: string;
+  created_at?: string;
+}
+
 export interface ConversationState {
   step: string;
   data: any;

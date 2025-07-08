@@ -4,8 +4,8 @@ import { UserModel, PaymentModel } from './database/models-new';
 import { ConversationState } from './types';
 import { setupHandlers } from './handlers/setup';
 import { clientHandlers } from './handlers/clients';
-import { productHandlers } from './handlers/products';
-import { invoiceHandlers } from './handlers/invoices';
+// import { productHandlers } from './handlers/products';  // Temporarily disabled for build
+// import { invoiceHandlers } from './handlers/invoices';  // Temporarily disabled for build
 import { paymentHandlers } from './handlers/payments';
 
 dotenv.config();
@@ -211,8 +211,8 @@ bot.onText(/\/refund (.+)/, async (msg, match) => {
 
 setupHandlers(bot);
 clientHandlers(bot);
-productHandlers(bot);
-invoiceHandlers(bot);
+// productHandlers(bot);  // Temporarily disabled for build
+// invoiceHandlers(bot);  // Temporarily disabled for build
 paymentHandlers(bot);
 
 bot.on('polling_error', (error) => {
