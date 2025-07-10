@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import dotenv from 'dotenv';
-import { UserModel, PaymentModel } from './database/models-new';
+import { UserModel, PaymentModel } from './database/models';
 import { ConversationState } from './types';
 import { setupHandlers } from './handlers/setup';
 import { clientHandlers } from './handlers/clients';

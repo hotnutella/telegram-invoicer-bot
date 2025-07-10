@@ -1,22 +1,22 @@
 import TelegramBot from 'node-telegram-bot-api';
-import { InvoiceModel, InvoiceLineModel, ClientModel, ProductModel, UserModel } from '../database/models-new';
+import { InvoiceModel, InvoiceLineModel, ClientModel, ProductModel, UserModel } from '../database/models';
 import { getConversationState, setConversationState, clearConversationState } from '../bot';
 import { sanitizeInput, validateRequired, validatePositiveNumber, validateVATRate } from '../utils/validators';
 import { formatCurrency, formatDate, formatDateForDB, addDays, truncateText, formatClientName, formatProductName } from '../utils/formatters';
 import { InvoiceCreationState, VATBreakdown } from '../types';
 
 export const invoiceHandlers = (bot: TelegramBot) => {
-  bot.onText(/\/newinvoice/, (msg) => {
+  bot.onText(/\/newinvoice/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from!.id;
     
-    const user = UserModel.findByTelegramId(userId);
+    const user = await UserModel.findByTelegramId(userId);
     if (!user || !user.company_name) {
       bot.sendMessage(chatId, '⚠️ Please set up your company information first using /setup');
       return;
     }
     
-    const clients = ClientModel.findByUserId(userId);
+    const clients = await ClientModel.findByUserId(userId);
     if (clients.length === 0) {
       bot.sendMessage(chatId, '⚠️ You need to add at least one client first. Use /addclient to add a client.');
       return;
@@ -42,11 +42,11 @@ export const invoiceHandlers = (bot: TelegramBot) => {
     });
   });
 
-  bot.onText(/\/invoices/, (msg) => {
+  bot.onText(/\/invoices/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from!.id;
     
-    const invoices = InvoiceModel.findByUserId(userId, 10);
+    const invoices = await InvoiceModel.findByUserId(userId);
     
     if (invoices.length === 0) {
       bot.sendMessage(chatId, '📄 No invoices found. Use /newinvoice to create your first invoice.');
@@ -55,8 +55,8 @@ export const invoiceHandlers = (bot: TelegramBot) => {
     
     let message = '📄 **Recent Invoices:**\n\n';
     
-    for (const invoice of invoices) {
-      const client = ClientModel.findById(invoice.client_id);
+    for (const invoice of invoices.slice(0, 10)) {
+      const client = await ClientModel.findById(invoice.client_id);
       const clientName = client ? client.name : 'Unknown Client';
       
       message += `**${invoice.invoice_number}** - ${clientName}\n`;
@@ -67,12 +67,12 @@ export const invoiceHandlers = (bot: TelegramBot) => {
     bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
   });
 
-  bot.onText(/\/invoice (.+)/, (msg, match) => {
+  bot.onText(/\/invoice (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const userId = msg.from!.id;
     const invoiceNumber = match![1];
     
-    const invoice = InvoiceModel.findByNumber(invoiceNumber);
+    const invoice = await InvoiceModel.findByInvoiceNumber(invoiceNumber);
     
     if (!invoice || invoice.user_id !== userId) {
       bot.sendMessage(chatId, '❌ Invoice not found or you don\'t have permission to access it.');
@@ -102,7 +102,7 @@ export const invoiceHandlers = (bot: TelegramBot) => {
         case 'select':
           if (parts[2] === 'client') {
             const clientId = parseInt(parts[3]);
-            const client = ClientModel.findById(clientId);
+            const client = await ClientModel.findById(clientId);
             
             if (client) {
               const state = getConversationState(userId);
@@ -110,7 +110,7 @@ export const invoiceHandlers = (bot: TelegramBot) => {
                 state.data.client_id = clientId;
                 setConversationState(userId, state);
                 
-                const products = ProductModel.findByUserId(userId);
+                const products = await ProductModel.findByUserId(userId);
                 const keyboard = products.map((product) => [{
                   text: truncateText(formatProductName(product), 30),
                   callback_data: `invoice_select_product_${product.id}`
@@ -146,7 +146,7 @@ export const invoiceHandlers = (bot: TelegramBot) => {
         case 'select':
           if (parts[2] === 'product') {
             const productId = parseInt(parts[3]);
-            const product = ProductModel.findById(productId);
+            const product = await ProductModel.findById(productId);
             
             if (product) {
               const state = getConversationState(userId);
@@ -182,7 +182,7 @@ export const invoiceHandlers = (bot: TelegramBot) => {
         case 'review':
           const state = getConversationState(userId);
           if (state && state.data.client_id) {
-            const client = ClientModel.findById(state.data.client_id);
+            const client = await ClientModel.findById(state.data.client_id);
             const lines = state.data.lines || [];
             
             if (lines.length === 0) {
@@ -233,7 +233,7 @@ export const invoiceHandlers = (bot: TelegramBot) => {
           
         case 'add':
           if (parts[2] === 'more') {
-            const products = ProductModel.findByUserId(userId);
+            const products = await ProductModel.findByUserId(userId);
             const keyboard = products.map((product) => [{
               text: truncateText(formatProductName(product), 30),
               callback_data: `invoice_select_product_${product.id}`

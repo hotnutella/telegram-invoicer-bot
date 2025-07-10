@@ -21,7 +21,6 @@
     "node_modules",
     "dist",
     "**/*.test.ts",
-    "src/handlers/invoices.ts",
     "src/scripts/create-schema.ts",
     "src/scripts/setup-supabase.ts"
   ]
