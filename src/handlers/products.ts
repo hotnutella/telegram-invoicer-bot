@@ -1,22 +1,23 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { ProductModel } from '../database/models-new';
+import { Product } from '../types';
 import { getConversationState, setConversationState, clearConversationState } from '../bot';
 import { sanitizeInput, validateRequired, validatePositiveNumber, validateVATRate } from '../utils/validators';
 import { formatProductName, formatCurrency, truncateText } from '../utils/formatters';
 
 export const productHandlers = (bot: TelegramBot) => {
-  bot.onText(/\/products/, (msg) => {
+  bot.onText(/\/products/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from!.id;
     
-    const products = ProductModel.findByUserId(userId);
+    const products = await ProductModel.findByUserId(userId);
     
     if (products.length === 0) {
       bot.sendMessage(chatId, '📦 No products/services found. Use /addproduct to add your first product.');
       return;
     }
     
-    const keyboard = products.map((product) => [{
+    const keyboard = products.map((product: Product) => [{
       text: truncateText(formatProductName(product), 30),
       callback_data: `product_view_${product.id}`
     }]);
@@ -43,18 +44,18 @@ export const productHandlers = (bot: TelegramBot) => {
     bot.sendMessage(chatId, '📦 Adding new product/service.\n\nPlease enter the product/service name:');
   });
 
-  bot.onText(/\/editproduct/, (msg) => {
+  bot.onText(/\/editproduct/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from!.id;
     
-    const products = ProductModel.findByUserId(userId);
+    const products = await ProductModel.findByUserId(userId);
     
     if (products.length === 0) {
       bot.sendMessage(chatId, '📦 No products/services found. Use /addproduct to add your first product.');
       return;
     }
     
-    const keyboard = products.map((product) => [{
+    const keyboard = products.map((product: Product) => [{
       text: truncateText(formatProductName(product), 30),
       callback_data: `product_edit_${product.id}`
     }]);
@@ -67,18 +68,18 @@ export const productHandlers = (bot: TelegramBot) => {
     });
   });
 
-  bot.onText(/\/deleteproduct/, (msg) => {
+  bot.onText(/\/deleteproduct/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from!.id;
     
-    const products = ProductModel.findByUserId(userId);
+    const products = await ProductModel.findByUserId(userId);
     
     if (products.length === 0) {
       bot.sendMessage(chatId, '📦 No products/services found.');
       return;
     }
     
-    const keyboard = products.map((product) => [{
+    const keyboard = products.map((product: Product) => [{
       text: truncateText(formatProductName(product), 30),
       callback_data: `product_delete_${product.id}`
     }]);
@@ -91,7 +92,7 @@ export const productHandlers = (bot: TelegramBot) => {
     });
   });
 
-  bot.on('callback_query', (query) => {
+  bot.on('callback_query', async (query) => {
     const chatId = query.message!.chat.id;
     const userId = query.from.id;
     const data = query.data!;
@@ -101,7 +102,7 @@ export const productHandlers = (bot: TelegramBot) => {
       
       switch (operation) {
         case 'view':
-          const product = ProductModel.findById(parseInt(id));
+          const product = await ProductModel.findById(parseInt(id));
           if (product) {
             const productInfo = `📦 **Product/Service Information:**
 
@@ -137,7 +138,7 @@ export const productHandlers = (bot: TelegramBot) => {
           break;
           
         case 'edit':
-          const editProduct = ProductModel.findById(parseInt(id));
+          const editProduct = await ProductModel.findById(parseInt(id));
           if (editProduct) {
             setConversationState(userId, {
               step: 'product_edit_name',
@@ -149,7 +150,7 @@ export const productHandlers = (bot: TelegramBot) => {
           break;
           
         case 'delete':
-          const deleteProduct = ProductModel.findById(parseInt(id));
+          const deleteProduct = await ProductModel.findById(parseInt(id));
           if (deleteProduct) {
             const keyboard = [
               [{ text: '✅ Yes, Delete', callback_data: `product_confirm_delete_${id}` }],
@@ -169,7 +170,7 @@ export const productHandlers = (bot: TelegramBot) => {
         case 'confirm':
           if (data.includes('delete')) {
             const deleteId = parseInt(data.split('_')[3]);
-            ProductModel.delete(deleteId);
+            await ProductModel.delete(deleteId);
             
             bot.editMessageText('✅ Product deleted successfully!', {
               chat_id: chatId,
@@ -180,7 +181,7 @@ export const productHandlers = (bot: TelegramBot) => {
       }
       
       if (data === 'products_list') {
-        const products = ProductModel.findByUserId(userId);
+        const products = await ProductModel.findByUserId(userId);
         
         if (products.length === 0) {
           bot.editMessageText('📦 No products/services found. Use /addproduct to add your first product.', {
@@ -190,7 +191,7 @@ export const productHandlers = (bot: TelegramBot) => {
           return;
         }
         
-        const keyboard = products.map((product) => [{
+        const keyboard = products.map((product: Product) => [{
           text: truncateText(formatProductName(product), 30),
           callback_data: `product_view_${product.id}`
         }]);
@@ -211,7 +212,7 @@ export const productHandlers = (bot: TelegramBot) => {
     bot.answerCallbackQuery(query.id);
   });
 
-  bot.on('message', (msg) => {
+  bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from!.id;
     const text = msg.text;
@@ -280,7 +281,7 @@ export const productHandlers = (bot: TelegramBot) => {
           default_vat_rate: state.data.default_vat_rate
         };
         
-        ProductModel.create(productData);
+        await ProductModel.create(productData);
         clearConversationState(userId);
         
         bot.sendMessage(chatId, '✅ Product added successfully!');
@@ -339,7 +340,7 @@ export const productHandlers = (bot: TelegramBot) => {
           default_vat_rate: state.data.default_vat_rate
         };
         
-        ProductModel.update(state.data.product_id, updateData);
+        await ProductModel.update(state.data.product_id, updateData);
         clearConversationState(userId);
         
         bot.sendMessage(chatId, '✅ Product updated successfully!');

@@ -90,7 +90,7 @@ export class StorageService {
         throw new Error(`List failed: ${error.message}`);
       }
 
-      return data.map(file => file.name);
+      return data.map((file: any) => file.name);
     } catch (error) {
       console.error('List PDFs error:', error);
       throw error;

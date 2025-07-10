@@ -21,10 +21,6 @@
     "node_modules",
     "dist",
     "**/*.test.ts",
-    "src/scripts/migrate-to-supabase.ts",
-    "src/scripts/create-schema.ts",
-    "src/scripts/setup-supabase.ts",
-    "src/handlers/invoices.ts",
-    "src/handlers/products.ts"
+    "src/handlers/invoices.ts"
   ]
 }
