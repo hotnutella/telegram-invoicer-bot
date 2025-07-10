@@ -140,7 +140,7 @@ async function createSchema() {
       throw listError;
     }
 
-    const bucketExists = buckets.some(bucket => bucket.name === bucketName);
+    const bucketExists = buckets.some((bucket: any) => bucket.name === bucketName);
     
     if (!bucketExists) {
       const { error: bucketError } = await supabaseAdmin.storage.createBucket(bucketName, {

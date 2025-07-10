@@ -43,7 +43,7 @@ async function setupSupabase() {
       throw listError;
     }
 
-    const bucketExists = buckets.some(bucket => bucket.name === bucketName);
+    const bucketExists = buckets.some((bucket: any) => bucket.name === bucketName);
     
     if (!bucketExists) {
       console.log('🆕 Creating storage bucket...');
