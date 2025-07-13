@@ -3,7 +3,7 @@ import { InvoiceModel, InvoiceLineModel, ClientModel, ProductModel, UserModel } 
 import { getConversationState, setConversationState, clearConversationState } from '../bot';
 import { sanitizeInput, validateRequired, validatePositiveNumber, validateVATRate } from '../utils/validators';
 import { formatCurrency, formatDate, formatDateForDB, addDays, truncateText, formatClientName, formatProductName } from '../utils/formatters';
-import { InvoiceCreationState, VATBreakdown } from '../types';
+import { InvoiceCreationState, VATBreakdown, Client, Product } from '../types';
 
 export const invoiceHandlers = (bot: TelegramBot) => {
   bot.onText(/\/newinvoice/, async (msg) => {
@@ -22,7 +22,7 @@ export const invoiceHandlers = (bot: TelegramBot) => {
       return;
     }
     
-    const keyboard = clients.map((client) => [{
+    const keyboard = clients.map((client: Client) => [{
       text: truncateText(formatClientName(client), 30),
       callback_data: `invoice_select_client_${client.id}`
     }]);
@@ -111,7 +111,7 @@ export const invoiceHandlers = (bot: TelegramBot) => {
                 setConversationState(userId, state);
                 
                 const products = await ProductModel.findByUserId(userId);
-                const keyboard = products.map((product) => [{
+                const keyboard = products.map((product: Product) => [{
                   text: truncateText(formatProductName(product), 30),
                   callback_data: `invoice_select_product_${product.id}`
                 }]);
@@ -234,7 +234,7 @@ export const invoiceHandlers = (bot: TelegramBot) => {
         case 'add':
           if (parts[2] === 'more') {
             const products = await ProductModel.findByUserId(userId);
-            const keyboard = products.map((product) => [{
+            const keyboard = products.map((product: Product) => [{
               text: truncateText(formatProductName(product), 30),
               callback_data: `invoice_select_product_${product.id}`
             }]);

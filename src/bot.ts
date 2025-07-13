@@ -5,7 +5,7 @@ import { ConversationState } from './types';
 import { setupHandlers } from './handlers/setup';
 import { clientHandlers } from './handlers/clients';
 import { productHandlers } from './handlers/products';
-// import { invoiceHandlers } from './handlers/invoices';  // Temporarily disabled - has async/await issues
+import { invoiceHandlers } from './handlers/invoices';
 import { paymentHandlers } from './handlers/payments';
 
 dotenv.config();
@@ -212,7 +212,7 @@ bot.onText(/\/refund (.+)/, async (msg, match) => {
 setupHandlers(bot);
 clientHandlers(bot);
 productHandlers(bot);
-// invoiceHandlers(bot);  // Temporarily disabled - has async/await issues
+invoiceHandlers(bot);
 paymentHandlers(bot);
 
 bot.on('polling_error', (error) => {
