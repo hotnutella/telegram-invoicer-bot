@@ -9,9 +9,10 @@ dist/
 # Environment variables
 .env
 
-# Database
-database/
+# Database files (keep source code, ignore data files)
 *.db
+*.sqlite
+*.sqlite3
 
 # Generated PDFs
 pdfs/

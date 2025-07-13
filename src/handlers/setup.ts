@@ -1,5 +1,5 @@
 import TelegramBot from 'node-telegram-bot-api';
-import { UserModel } from '../database/models';
+import { UserModel } from '../database';
 import { getConversationState, setConversationState, clearConversationState } from '../bot';
 import { validateEmail, validatePhone, validateIBAN, sanitizeInput, validateRequired } from '../utils/validators';
 

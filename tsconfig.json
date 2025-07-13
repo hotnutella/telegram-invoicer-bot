@@ -5,14 +5,22 @@
     "lib": ["ES2020", "dom"],
     "outDir": "./dist",
     "rootDir": "./src",
+    "baseUrl": "./src",
+    "moduleResolution": "node",
     "strict": true,
     "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "paths": {
+      "@/*": ["*"],
+      "@/database/*": ["database/*"],
+      "@/types": ["types"]
+    }
   },
   "include": [
     "src/**/*"
