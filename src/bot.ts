@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import dotenv from 'dotenv';
-import { UserModel, PaymentModel } from './database';
+import { UserModel, PaymentModel, db } from './database';
 import { ConversationState } from './types';
 import { setupHandlers } from './handlers/setup';
 import { clientHandlers } from './handlers/clients';
@@ -11,7 +11,46 @@ import { paymentHandlers } from './handlers/payments';
 dotenv.config();
 
 const token = process.env.TELEGRAM_BOT_TOKEN!;
-const bot = new TelegramBot(token, { polling: true });
+
+// Initialize bot immediately (before handlers are set up)
+const bot = new TelegramBot(token, { 
+  polling: {
+    interval: 2000,
+    autoStart: false
+  }
+});
+
+// Initialize bot with graceful startup
+async function initializeBot() {
+  try {
+    console.log('🤖 Initializing Invoice Generator Bot...');
+    
+    // Test database connection first
+    console.log('📊 Testing database connection...');
+    const dbConnected = await db.testConnection();
+    
+    if (!dbConnected) {
+      console.error('❌ Database connection failed. Bot will continue but may have limited functionality.');
+    } else {
+      console.log('✅ Database connection successful');
+    }
+    
+    // Add error handlers
+    bot.on('polling_error', (error) => {
+      console.error('❌ Polling error:', error);
+    });
+    
+    bot.on('error', (error) => {
+      console.error('❌ Bot error:', error);
+    });
+    
+    console.log('🔧 Setting up handlers...');
+    
+  } catch (error) {
+    console.error('❌ Failed to initialize bot:', error);
+    process.exit(1);
+  }
+}
 
 const conversationStates = new Map<number, ConversationState>();
 
@@ -27,14 +66,38 @@ export const clearConversationState = (userId: number): void => {
   conversationStates.delete(userId);
 };
 
-bot.onText(/\/start/, async (msg) => {
+// Add error handling wrapper for bot commands
+function wrapWithErrorHandling(handler: (msg: any) => Promise<void>) {
+  return async (msg: any) => {
+    try {
+      await handler(msg);
+    } catch (error) {
+      console.error('❌ Command error:', error);
+      const chatId = msg.chat.id;
+      try {
+        await bot.sendMessage(chatId, '❌ Something went wrong. Please try again later.');
+      } catch (sendError) {
+        console.error('❌ Failed to send error message:', sendError);
+      }
+    }
+  };
+}
+
+// Wrap commands with error handling
+const startCommand = wrapWithErrorHandling(async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from!.id;
 
-  const user = await UserModel.findByTelegramId(userId);
-  
-  if (!user) {
-    await UserModel.create({ telegram_id: userId });
+  let user;
+  try {
+    user = await UserModel.findByTelegramId(userId);
+    
+    if (!user) {
+      await UserModel.create({ telegram_id: userId });
+    }
+  } catch (error) {
+    console.error('Database error in /start command:', error);
+    // Continue without user data if database is down
   }
 
   const welcomeMessage = `🎉 Welcome to Invoice Generator Bot!
@@ -209,16 +272,57 @@ bot.onText(/\/refund (.+)/, async (msg, match) => {
   }
 });
 
-setupHandlers(bot);
-clientHandlers(bot);
-productHandlers(bot);
-invoiceHandlers(bot);
-paymentHandlers(bot);
+// Setup startup sequence
+async function startBot() {
+  await initializeBot();
+  
+  // Register the start command with error handling
+  bot.onText(/\/start/, startCommand);
+  
+  // Setup handlers
+  setupHandlers(bot);
+  clientHandlers(bot);
+  productHandlers(bot);
+  invoiceHandlers(bot);
+  paymentHandlers(bot);
+  
+  // Start polling
+  console.log('🚀 Starting bot polling...');
+  bot.startPolling();
+  
+  console.log('✅ Invoice Generator Bot is running successfully!');
+}
 
-bot.on('polling_error', (error) => {
-  console.error('Polling error:', error);
+// Handle graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Shutting down bot gracefully...');
+  try {
+    bot.stopPolling();
+    await db.close();
+    console.log('✅ Bot shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
 });
 
-console.log('🤖 Invoice Generator Bot is running...');
+process.on('SIGTERM', async () => {
+  console.log('\n🛑 Received SIGTERM, shutting down...');
+  try {
+    bot.stopPolling();
+    await db.close();
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
+});
+
+// Start the bot
+startBot().catch(error => {
+  console.error('❌ Failed to start bot:', error);
+  process.exit(1);
+});
 
 export { bot };
