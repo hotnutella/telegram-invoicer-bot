@@ -1,6 +1,5 @@
 import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
-import { lookup } from 'dns';
 
 dotenv.config();
 
@@ -23,51 +22,24 @@ function parseConnectionString(connectionString: string) {
 // Initialize pool synchronously with fallback
 let pgPool: Pool;
 
-// Resolve hostname to IPv4 address synchronously
-function resolveHostnameToIPv4(hostname: string): string {
-  try {
-    console.log(`🔍 Resolving ${hostname} to IPv4...`);
-    
-    // Use synchronous DNS lookup (this blocks but is necessary)
-    const util = require('util');
-    const lookupPromise = util.promisify(lookup);
-    
-    // We need to wrap this in a Promise that resolves synchronously
-    // For now, let's use a different approach - try to get IPv4 first
-    
-    // For the Supabase hostname, we can try to use a different approach
-    // Let's try to replace with a connection pooler endpoint if available
-    if (hostname.includes('supabase.co')) {
-      // Try connection pooler endpoint (often has better IPv4 support)
-      const poolerHostname = hostname.replace('db.', '').replace('.supabase.co', '.pooler.supabase.com');
-      console.log(`🔄 Trying connection pooler: ${poolerHostname}`);
-      return poolerHostname;
-    }
-    
-    return hostname; // Fallback to original hostname
-  } catch (error) {
-    console.warn(`❌ Failed to resolve ${hostname}:`, error);
-    return hostname; // Fallback to original hostname
-  }
-}
 
-// Create pool with fallback to connection string
+// Create pool with multiple fallback strategies
 function initializePool(): Pool {
-  try {
-    // For production, try to create pool with IPv4 resolution
-    if (isProduction && process.env.DATABASE_URL) {
-      console.log('🔄 Attempting to create pool with IPv4 resolution...');
-      
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL environment variable is not set');
+  }
+
+  // For production, try multiple connection strategies
+  if (isProduction) {
+    console.log('🔄 Production mode: trying multiple connection strategies...');
+    
+    // Strategy 1: Try with parsed config and explicit settings
+    try {
       const config = parseConnectionString(process.env.DATABASE_URL);
+      console.log(`📡 Strategy 1 - Using parsed config with host: ${config.host}`);
       
-      // Try to resolve hostname to IPv4 or use connection pooler
-      const resolvedHost = resolveHostnameToIPv4(config.host);
-      
-      console.log(`📡 Using host: ${resolvedHost}`);
-      
-      // Create pool with resolved host
       return new Pool({
-        host: resolvedHost,
+        host: config.host,
         port: config.port,
         database: config.database,
         user: config.user,
@@ -80,23 +52,40 @@ function initializePool(): Pool {
         keepAlive: true,
         keepAliveInitialDelayMillis: 10000,
       });
-    } else {
-      // Development mode - use connection string
+    } catch (error) {
+      console.warn('❌ Strategy 1 failed:', error instanceof Error ? error.message : String(error));
+    }
+
+    // Strategy 2: Use connection string with SSL enforcement
+    try {
+      console.log('📡 Strategy 2 - Using connection string with SSL');
       return new Pool({
         connectionString: process.env.DATABASE_URL,
-        ssl: isProduction ? { rejectUnauthorized: false } : false,
+        ssl: { rejectUnauthorized: false },
         max: 10,
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: 10000,
         query_timeout: 30000,
       });
+    } catch (error) {
+      console.warn('❌ Strategy 2 failed:', error instanceof Error ? error.message : String(error));
     }
-  } catch (error) {
-    console.warn('❌ Failed to create pool with parsed config, falling back to connection string:', error);
-    // Fallback to basic connection string
+
+    // Strategy 3: Basic connection string (last resort)
+    console.log('📡 Strategy 3 - Basic connection string (last resort)');
     return new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: isProduction ? { rejectUnauthorized: false } : false,
+      ssl: false, // Try without SSL as last resort
+      max: 5,
+      idleTimeoutMillis: 15000,
+      connectionTimeoutMillis: 5000,
+    });
+  } else {
+    // Development mode - use connection string
+    console.log('🔧 Development mode - using connection string');
+    return new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: false,
       max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,
