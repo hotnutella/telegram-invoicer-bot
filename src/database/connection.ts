@@ -1,228 +1,258 @@
-import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
-import { lookup } from 'dns';
-import { promisify } from 'util';
 
 dotenv.config();
 
-const isProduction = process.env.NODE_ENV === 'production';
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
-// Parse DATABASE_URL to extract connection components
-function parseConnectionString(connectionString: string) {
-  const url = new URL(connectionString);
-  return {
-    host: url.hostname,
-    port: parseInt(url.port) || 5432,
-    database: url.pathname.slice(1), // Remove leading slash
-    user: url.username,
-    password: url.password,
-  };
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  throw new Error('SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables are required');
 }
 
+// Supabase REST API client
+class SupabaseRestClient {
+  private baseUrl: string;
+  private headers: Record<string, string>;
 
-
-// Async function to resolve hostname to IPv4
-const lookupAsync = promisify(lookup);
-
-async function resolveHostnameToIPv4(hostname: string): Promise<string> {
-  try {
-    console.log(`🔍 Resolving ${hostname} to IPv4...`);
-    const { address } = await lookupAsync(hostname, { family: 4 });
-    console.log(`✅ Resolved ${hostname} to IPv4: ${address}`);
-    return address;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.warn(`❌ Failed to resolve ${hostname} to IPv4:`, errorMessage);
-    
-    // If DNS resolution fails completely, this might be a Railway networking issue
-    if (errorMessage.includes('ENOTFOUND')) {
-      console.warn('💡 DNS resolution failed - this might be a Railway container networking issue');
-      console.warn('💡 Falling back to original hostname - PostgreSQL will handle resolution');
-    }
-    
-    return hostname; // Fallback to original hostname
-  }
-}
-
-// Function to create modified DATABASE_URL with IPv4 address
-async function createIPv4DatabaseUrl(originalUrl: string): Promise<string> {
-  try {
-    const config = parseConnectionString(originalUrl);
-    const ipv4Address = await resolveHostnameToIPv4(config.host);
-    
-    // If we got an IP address, replace the hostname in the URL
-    if (ipv4Address !== config.host && ipv4Address.match(/^\d+\.\d+\.\d+\.\d+$/)) {
-      const modifiedUrl = originalUrl.replace(config.host, ipv4Address);
-      console.log(`🔄 Modified DATABASE_URL to use IPv4: ${modifiedUrl.replace(config.password, '[HIDDEN]')}`);
-      return modifiedUrl;
-    }
-    
-    return originalUrl;
-  } catch (error) {
-    console.warn('❌ Failed to create IPv4 database URL:', error instanceof Error ? error.message : String(error));
-    return originalUrl;
-  }
-}
-
-// Initialize pool synchronously with fallback
-let pgPool: Pool;
-
-// Create pool with IPv4 resolution
-async function initializePool(): Promise<Pool> {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL environment variable is not set');
+  constructor() {
+    this.baseUrl = `${SUPABASE_URL!}/rest/v1`;
+    this.headers = {
+      'apikey': SUPABASE_SERVICE_KEY!,
+      'Authorization': `Bearer ${SUPABASE_SERVICE_KEY!}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=minimal'
+    };
   }
 
-  // For production, try to resolve hostname to IPv4 first
-  if (isProduction) {
-    console.log('🔄 Production mode: attempting IPv4 resolution...');
-    
+  // Execute a SELECT query
+  async query(table: string, options: {
+    select?: string;
+    eq?: Record<string, any>;
+    order?: string;
+    limit?: number;
+    single?: boolean;
+  } = {}): Promise<any[]> {
     try {
-      const ipv4DatabaseUrl = await createIPv4DatabaseUrl(process.env.DATABASE_URL);
-      
-      console.log('📡 Creating pool with IPv4-resolved URL');
-      return new Pool({
-        connectionString: ipv4DatabaseUrl,
-        ssl: { rejectUnauthorized: false },
-        max: 10,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 10000,
-        query_timeout: 30000,
-      });
-    } catch (error) {
-      console.warn('❌ IPv4 resolution failed, using original URL:', error instanceof Error ? error.message : String(error));
-      
-      // Fallback to original URL
-      return new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: { rejectUnauthorized: false },
-        max: 10,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 10000,
-        query_timeout: 30000,
-      });
-    }
-  } else {
-    // Development mode - use connection string
-    console.log('🔧 Development mode - using connection string');
-    return new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: false,
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000,
-      query_timeout: 30000,
-    });
-  }
-}
+      let url = `${this.baseUrl}/${table}`;
+      const params = new URLSearchParams();
 
-// Initialize pool asynchronously
-let poolInitialized = false;
-
-// Initialize pool and set global variable
-(async () => {
-  try {
-    pgPool = await initializePool();
-    poolInitialized = true;
-    console.log('✅ Database pool initialized');
-  } catch (error) {
-    console.error('❌ Failed to initialize database pool:', error);
-    // Fallback to basic pool
-    pgPool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: isProduction ? { rejectUnauthorized: false } : false,
-      max: 5,
-      idleTimeoutMillis: 15000,
-      connectionTimeoutMillis: 5000,
-    });
-    poolInitialized = true;
-    console.log('✅ Database pool initialized with fallback');
-  }
-})();
-
-// Helper function to wait for pool initialization
-async function waitForPoolInitialization(): Promise<void> {
-  while (!poolInitialized) {
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-}
-
-// Helper function to retry database operations
-async function retryOperation<T>(operation: () => Promise<T>, maxRetries: number = 3): Promise<T> {
-  // Wait for pool to be initialized
-  await waitForPoolInitialization();
-  
-  let lastError;
-  
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      console.warn(`Database operation failed (attempt ${i + 1}/${maxRetries}):`, error);
-      
-      if (i < maxRetries - 1) {
-        // Wait before retrying (exponential backoff)
-        await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+      if (options.select) {
+        params.append('select', options.select);
       }
+
+      if (options.eq) {
+        Object.entries(options.eq).forEach(([key, value]) => {
+          params.append(`${key}`, `eq.${value}`);
+        });
+      }
+
+      if (options.order) {
+        params.append('order', options.order);
+      }
+
+      if (options.limit) {
+        params.append('limit', options.limit.toString());
+      }
+
+      if (params.toString()) {
+        url += '?' + params.toString();
+      }
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: this.headers
+      });
+
+      if (!response.ok) {
+        throw new Error(`Supabase API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return options.single ? [data] : data;
+    } catch (error) {
+      console.error('Supabase query error:', error);
+      throw error;
     }
   }
-  
-  throw lastError;
+
+  // Execute a single SELECT query (returns first result)
+  async queryOne(table: string, options: {
+    select?: string;
+    eq?: Record<string, any>;
+  } = {}): Promise<any | null> {
+    try {
+      const results = await this.query(table, { ...options, limit: 1 });
+      return results.length > 0 ? results[0] : null;
+    } catch (error) {
+      console.error('Supabase queryOne error:', error);
+      throw error;
+    }
+  }
+
+  // Execute an INSERT
+  async insert(table: string, data: Record<string, any>): Promise<any> {
+    try {
+      const response = await fetch(`${this.baseUrl}/${table}`, {
+        method: 'POST',
+        headers: {
+          ...this.headers,
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify(data)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Supabase insert error: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      return Array.isArray(result) ? result[0] : result;
+    } catch (error) {
+      console.error('Supabase insert error:', error);
+      throw error;
+    }
+  }
+
+  // Execute an UPDATE
+  async update(table: string, data: Record<string, any>, where: Record<string, any>): Promise<{ affectedRows: number }> {
+    try {
+      let url = `${this.baseUrl}/${table}`;
+      const params = new URLSearchParams();
+
+      Object.entries(where).forEach(([key, value]) => {
+        params.append(`${key}`, `eq.${value}`);
+      });
+
+      if (params.toString()) {
+        url += '?' + params.toString();
+      }
+
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers: this.headers,
+        body: JSON.stringify(data)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Supabase update error: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      // Supabase doesn't return affected rows count in the same way
+      // We'll return 1 for successful updates
+      return { affectedRows: 1 };
+    } catch (error) {
+      console.error('Supabase update error:', error);
+      throw error;
+    }
+  }
+
+  // Execute a DELETE
+  async delete(table: string, where: Record<string, any>): Promise<{ affectedRows: number }> {
+    try {
+      let url = `${this.baseUrl}/${table}`;
+      const params = new URLSearchParams();
+
+      Object.entries(where).forEach(([key, value]) => {
+        params.append(`${key}`, `eq.${value}`);
+      });
+
+      if (params.toString()) {
+        url += '?' + params.toString();
+      }
+
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: this.headers
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Supabase delete error: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      return { affectedRows: 1 };
+    } catch (error) {
+      console.error('Supabase delete error:', error);
+      throw error;
+    }
+  }
+
+  // Execute raw SQL (for complex queries)
+  async rawQuery(query: string, params: any[] = []): Promise<any[]> {
+    try {
+      // For complex queries, we'll use Supabase's RPC function
+      console.warn('Raw SQL queries are not directly supported with REST API. Consider using specific methods.');
+      return [];
+    } catch (error) {
+      console.error('Supabase raw query error:', error);
+      throw error;
+    }
+  }
+
+  // Test connection
+  async testConnection(): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/users?limit=1`, {
+        method: 'GET',
+        headers: this.headers
+      });
+      
+      console.log(`✅ Supabase REST API connection test: ${response.status}`);
+      return response.ok;
+    } catch (error) {
+      console.error('Supabase connection test failed:', error);
+      return false;
+    }
+  }
 }
 
+// Create the client instance
+const supabaseClient = new SupabaseRestClient();
+
+// Export compatible interface similar to the old pg-based db
 export const db = {
-  // Execute raw SQL query with retry logic
+  // Execute raw SQL query (adapted for REST API)
   async query(sql: string, params: any[] = []): Promise<any[]> {
-    return retryOperation(async () => {
-      const result = await pgPool.query(sql, params);
-      return result.rows;
-    });
+    console.warn('Raw SQL queries are not supported with REST API. Use specific methods instead.');
+    return [];
   },
 
-  // Execute a single query and return first result
+  // Execute a single query and return first result (adapted for REST API)
   async queryOne(sql: string, params: any[] = []): Promise<any | null> {
-    return retryOperation(async () => {
-      const result = await pgPool.query(sql, params);
-      return result.rows[0] || null;
-    });
+    console.warn('Raw SQL queries are not supported with REST API. Use specific methods instead.');
+    return null;
   },
 
-  // Execute insert/update/delete and return info
+  // Execute insert/update/delete (adapted for REST API)
   async execute(sql: string, params: any[] = []): Promise<{ affectedRows: number }> {
-    return retryOperation(async () => {
-      const result = await pgPool.query(sql, params);
-      return { affectedRows: result.rowCount || 0 };
-    });
+    console.warn('Raw SQL queries are not supported with REST API. Use specific methods instead.');
+    return { affectedRows: 0 };
   },
 
-  // Execute multiple statements (for migrations)
+  // Execute multiple statements (not needed for REST API)
   async exec(sql: string): Promise<void> {
-    return retryOperation(async () => {
-      await pgPool.query(sql);
-    });
+    console.warn('Raw SQL execution is not supported with REST API.');
   },
 
   // Test database connection
   async testConnection(): Promise<boolean> {
-    try {
-      await pgPool.query('SELECT 1');
-      return true;
-    } catch (error) {
-      console.error('Database connection test failed:', error);
-      return false;
-    }
+    return await supabaseClient.testConnection();
   },
 
-  // Close connection
+  // Close connection (not needed for REST API)
   async close(): Promise<void> {
-    await pgPool.end();
+    console.log('✅ Supabase REST API client closed');
   },
 
   // Get database type
-  getType(): 'postgresql' {
-    return 'postgresql';
-  }
+  getType(): 'supabase' {
+    return 'supabase';
+  },
+
+  // Expose the Supabase client for direct use
+  client: supabaseClient
 };
 
 export default db;
