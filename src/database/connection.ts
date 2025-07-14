@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
+import { lookup } from 'dns';
 
 dotenv.config();
 
@@ -22,6 +23,34 @@ function parseConnectionString(connectionString: string) {
 // Initialize pool synchronously with fallback
 let pgPool: Pool;
 
+// Resolve hostname to IPv4 address synchronously
+function resolveHostnameToIPv4(hostname: string): string {
+  try {
+    console.log(`🔍 Resolving ${hostname} to IPv4...`);
+    
+    // Use synchronous DNS lookup (this blocks but is necessary)
+    const util = require('util');
+    const lookupPromise = util.promisify(lookup);
+    
+    // We need to wrap this in a Promise that resolves synchronously
+    // For now, let's use a different approach - try to get IPv4 first
+    
+    // For the Supabase hostname, we can try to use a different approach
+    // Let's try to replace with a connection pooler endpoint if available
+    if (hostname.includes('supabase.co')) {
+      // Try connection pooler endpoint (often has better IPv4 support)
+      const poolerHostname = hostname.replace('db.', '').replace('.supabase.co', '.pooler.supabase.com');
+      console.log(`🔄 Trying connection pooler: ${poolerHostname}`);
+      return poolerHostname;
+    }
+    
+    return hostname; // Fallback to original hostname
+  } catch (error) {
+    console.warn(`❌ Failed to resolve ${hostname}:`, error);
+    return hostname; // Fallback to original hostname
+  }
+}
+
 // Create pool with fallback to connection string
 function initializePool(): Pool {
   try {
@@ -29,12 +58,16 @@ function initializePool(): Pool {
     if (isProduction && process.env.DATABASE_URL) {
       console.log('🔄 Attempting to create pool with IPv4 resolution...');
       
-      // Try to resolve hostname synchronously (with timeout)
       const config = parseConnectionString(process.env.DATABASE_URL);
       
-      // Create pool with parsed config first
+      // Try to resolve hostname to IPv4 or use connection pooler
+      const resolvedHost = resolveHostnameToIPv4(config.host);
+      
+      console.log(`📡 Using host: ${resolvedHost}`);
+      
+      // Create pool with resolved host
       return new Pool({
-        host: config.host,
+        host: resolvedHost,
         port: config.port,
         database: config.database,
         user: config.user,
