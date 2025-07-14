@@ -8,13 +8,6 @@
     "dev": "ts-node src/bot.ts",
     "build": "tsc",
     "test": "jest",
-    "migrate": "ts-node src/scripts/migrate-to-supabase.ts",
-    "migrate-pdfs": "ts-node src/scripts/migrate-pdfs-to-supabase.ts",
-    "test-supabase": "ts-node src/scripts/test-supabase-connection.ts",
-    "setup-supabase": "ts-node src/scripts/setup-supabase.ts",
-    "setup-manual": "ts-node src/scripts/setup-supabase-manual.ts",
-    "create-schema": "ts-node src/scripts/create-schema.ts",
-    "create-db": "ts-node src/scripts/create-db-postgres.ts",
     "docker:build": "docker build -t telegram-invoice-bot .",
     "docker:run": "docker-compose up -d",
     "docker:stop": "docker-compose down"
