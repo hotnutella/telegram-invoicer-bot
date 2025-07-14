@@ -31,7 +31,15 @@ async function resolveHostnameToIPv4(hostname: string): Promise<string> {
     console.log(`✅ Resolved ${hostname} to IPv4: ${address}`);
     return address;
   } catch (error) {
-    console.warn(`❌ Failed to resolve ${hostname} to IPv4:`, error instanceof Error ? error.message : String(error));
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.warn(`❌ Failed to resolve ${hostname} to IPv4:`, errorMessage);
+    
+    // If DNS resolution fails completely, this might be a Railway networking issue
+    if (errorMessage.includes('ENOTFOUND')) {
+      console.warn('💡 DNS resolution failed - this might be a Railway container networking issue');
+      console.warn('💡 Falling back to original hostname - PostgreSQL will handle resolution');
+    }
+    
     return hostname; // Fallback to original hostname
   }
 }

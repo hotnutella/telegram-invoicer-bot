@@ -25,7 +25,10 @@ async function initializeBot() {
   try {
     console.log('🤖 Initializing Invoice Generator Bot...');
     
-    // Test database connection first
+    // Test database connection first (wait for pool to be ready)
+    console.log('📊 Waiting for database pool to be ready...');
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds for pool initialization
+    
     console.log('📊 Testing database connection...');
     const dbConnected = await db.testConnection();
     
