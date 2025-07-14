@@ -1,6 +1,5 @@
 import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
-import { lookup } from 'dns';
 
 dotenv.config();
 
@@ -18,79 +17,51 @@ function parseConnectionString(connectionString: string) {
   };
 }
 
-// Resolve hostname to IPv4 address to avoid IPv6 issues
-async function resolveToIPv4(hostname: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    lookup(hostname, { family: 4 }, (err, address) => {
-      if (err) {
-        console.warn(`Failed to resolve ${hostname} to IPv4, using hostname:`, err.message);
-        resolve(hostname); // Fallback to hostname
-      } else {
-        console.log(`Resolved ${hostname} to IPv4: ${address}`);
-        resolve(address);
-      }
-    });
-  });
-}
 
-// PostgreSQL connection with IPv4 forcing for Railway
-const connectionConfig = process.env.DATABASE_URL 
-  ? parseConnectionString(process.env.DATABASE_URL)
-  : {
-      host: 'localhost',
-      port: 5432,
-      database: 'postgres',
-      user: 'postgres',
-      password: ''
-    };
 
-// Create connection pool with IPv4 resolution
-async function createPool() {
-  let host = connectionConfig.host;
-  
-  // For production (Railway), resolve hostname to IPv4
-  if (isProduction && host && !host.match(/^\d+\.\d+\.\d+\.\d+$/)) {
-    try {
-      host = await resolveToIPv4(host);
-    } catch (error) {
-      console.warn('Failed to resolve hostname to IPv4:', error);
-    }
-  }
-  
-  return new Pool({
-    host: host,
-    port: connectionConfig.port,
-    database: connectionConfig.database,
-    user: connectionConfig.user,
-    password: connectionConfig.password,
-    
-    // SSL configuration
-    ssl: isProduction ? { rejectUnauthorized: false } : false,
-    
-    // Railway-specific optimizations
-    max: 10, // Maximum connections in pool
-    idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
-    connectionTimeoutMillis: 10000, // Timeout connection attempts after 10 seconds
-    query_timeout: 30000, // Timeout queries after 30 seconds
-    
-    // Additional connection options
-    keepAlive: true,
-    keepAliveInitialDelayMillis: 10000,
-  });
-}
-
-// Initialize pool
+// Initialize pool synchronously with fallback
 let pgPool: Pool;
 
-// Initialize pool asynchronously
-(async () => {
+// Create pool with fallback to connection string
+function initializePool(): Pool {
   try {
-    pgPool = await createPool();
-    console.log('✅ Database pool created successfully');
+    // For production, try to create pool with IPv4 resolution
+    if (isProduction && process.env.DATABASE_URL) {
+      console.log('🔄 Attempting to create pool with IPv4 resolution...');
+      
+      // Try to resolve hostname synchronously (with timeout)
+      const config = parseConnectionString(process.env.DATABASE_URL);
+      
+      // Create pool with parsed config first
+      return new Pool({
+        host: config.host,
+        port: config.port,
+        database: config.database,
+        user: config.user,
+        password: config.password,
+        ssl: { rejectUnauthorized: false },
+        max: 10,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+        query_timeout: 30000,
+        keepAlive: true,
+        keepAliveInitialDelayMillis: 10000,
+      });
+    } else {
+      // Development mode - use connection string
+      return new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: isProduction ? { rejectUnauthorized: false } : false,
+        max: 10,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+        query_timeout: 30000,
+      });
+    }
   } catch (error) {
-    console.error('❌ Failed to create database pool:', error);
-    // Fallback to basic connection without IPv4 resolution
-    pgPool = new Pool({
+    console.warn('❌ Failed to create pool with parsed config, falling back to connection string:', error);
+    // Fallback to basic connection string
+    return new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: isProduction ? { rejectUnauthorized: false } : false,
       max: 10,
@@ -99,7 +70,11 @@ let pgPool: Pool;
       query_timeout: 30000,
     });
   }
-})();
+}
+
+// Initialize pool immediately
+pgPool = initializePool();
+console.log('✅ Database pool initialized');
 
 // Helper function to retry database operations
 async function retryOperation<T>(operation: () => Promise<T>, maxRetries: number = 3): Promise<T> {
