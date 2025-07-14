@@ -1,22 +1,105 @@
 import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
+import { lookup } from 'dns';
 
 dotenv.config();
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-// PostgreSQL connection with enhanced configuration for Railway
-const pgPool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: isProduction ? { rejectUnauthorized: false } : false,
-  // Force IPv4 and add Railway-specific optimizations
-  host: isProduction ? process.env.DATABASE_URL?.match(/\/\/([^:]+)/)?.[1] : undefined,
-  max: 10, // Maximum connections in pool
-  idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
-  connectionTimeoutMillis: 10000, // Timeout connection attempts after 10 seconds
-  // Retry configuration
-  query_timeout: 30000, // Timeout queries after 30 seconds
-});
+// Parse DATABASE_URL to extract connection components
+function parseConnectionString(connectionString: string) {
+  const url = new URL(connectionString);
+  return {
+    host: url.hostname,
+    port: parseInt(url.port) || 5432,
+    database: url.pathname.slice(1), // Remove leading slash
+    user: url.username,
+    password: url.password,
+  };
+}
+
+// Resolve hostname to IPv4 address to avoid IPv6 issues
+async function resolveToIPv4(hostname: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    lookup(hostname, { family: 4 }, (err, address) => {
+      if (err) {
+        console.warn(`Failed to resolve ${hostname} to IPv4, using hostname:`, err.message);
+        resolve(hostname); // Fallback to hostname
+      } else {
+        console.log(`Resolved ${hostname} to IPv4: ${address}`);
+        resolve(address);
+      }
+    });
+  });
+}
+
+// PostgreSQL connection with IPv4 forcing for Railway
+const connectionConfig = process.env.DATABASE_URL 
+  ? parseConnectionString(process.env.DATABASE_URL)
+  : {
+      host: 'localhost',
+      port: 5432,
+      database: 'postgres',
+      user: 'postgres',
+      password: ''
+    };
+
+// Create connection pool with IPv4 resolution
+async function createPool() {
+  let host = connectionConfig.host;
+  
+  // For production (Railway), resolve hostname to IPv4
+  if (isProduction && host && !host.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+    try {
+      host = await resolveToIPv4(host);
+    } catch (error) {
+      console.warn('Failed to resolve hostname to IPv4:', error);
+    }
+  }
+  
+  return new Pool({
+    host: host,
+    port: connectionConfig.port,
+    database: connectionConfig.database,
+    user: connectionConfig.user,
+    password: connectionConfig.password,
+    
+    // SSL configuration
+    ssl: isProduction ? { rejectUnauthorized: false } : false,
+    
+    // Railway-specific optimizations
+    max: 10, // Maximum connections in pool
+    idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
+    connectionTimeoutMillis: 10000, // Timeout connection attempts after 10 seconds
+    query_timeout: 30000, // Timeout queries after 30 seconds
+    
+    // Additional connection options
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
+  });
+}
+
+// Initialize pool
+let pgPool: Pool;
+
+// Initialize pool asynchronously
+(async () => {
+  try {
+    pgPool = await createPool();
+    console.log('✅ Database pool created successfully');
+  } catch (error) {
+    console.error('❌ Failed to create database pool:', error);
+    // Fallback to basic connection without IPv4 resolution
+    pgPool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: isProduction ? { rejectUnauthorized: false } : false,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+      query_timeout: 30000,
+    });
+  }
+})();
 
 // Helper function to retry database operations
 async function retryOperation<T>(operation: () => Promise<T>, maxRetries: number = 3): Promise<T> {
